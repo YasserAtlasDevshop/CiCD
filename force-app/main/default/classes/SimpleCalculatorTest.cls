@@ -3,8 +3,8 @@ public class SimpleCalculatorTest {
     @IsTest
     static void testAddNumbers() {
         // Test Data
-        Integer num1 = 30;
-        Integer num2 = 30;
+        Integer num1 = 20;
+        Integer num2 = 20;
 
         // Call the method and store the result
         Integer result = SimpleCalculator.addNumbers(num1, num2);
