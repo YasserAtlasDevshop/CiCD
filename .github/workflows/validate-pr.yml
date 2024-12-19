@@ -1,28 +1,83 @@
-name: Validate pull request
+name: Validate PR on develop branch
 
 on:
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize]
-    paths:
-      - 'force-app/**'
+    pull_request:
+      types: [opened]
+      branches: [ Develop ]
+      paths:
+        - 'force-app/**'
+            
 
 jobs:
-  validate-deployment:
-    runs-on: ubuntu-latest
-    container:
-      image: salesforce/cli:latest-slim
-    steps:      
-      - name: 'Checkout source code'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: 'Authenticate using SFDX_AUTH_URL'
-        run: | 
-          echo ${{ secrets.SFDX_AUTH_URL }} | sf org login sfdx-url -s -u
+    validate-deployment-on-develop-org:
+        runs-on: ubuntu-latest
+        container:
+          image: salesforce/cli:latest-slim
+        if: ${{ github.actor != 'dependabot[bot]' }}
+        steps:
+            - uses: actions/setup-node@v3
+              with:
+                node-version: '14'
 
-      - name: 'Validate'
-        run: |
-          sf project deploy validate -d force-app/ -l RunLocalTests -w 30          
+            - name: 'Checkout source code'
+              uses: actions/checkout@v3
+              with:
+                fetch-depth: 0
+
+            - name: 'Read PR Body'
+              env:
+                PR_BODY: ${{github.event.pull_request.body}}
+
+              # Here we print the content of the environment variable and
+              # pipe to a a text file.
+
+              # Then we call the local script parsePR.js, which will create
+              # a new file called testsToRun.txt. This file will have the list
+              # of tests to run separated by a comma
+
+              # Finally, we add the list of tests to the $GITHUB_ENV variable
+              # as this allows us to reference the list in a subsequent step.  If you
+              # were using a normal env variable, its value would not be available outside this step.
+              run: |
+                  echo $PR_BODY > ./pr_body.txt
+                  node ./parsePR.js              
+                  TESTS=$(cat testsToRun.txt)       
+                  echo "APEX_TESTS=$TESTS" >> $GITHUB_ENV
+
+            - name: 'Installing sfdx git delta'
+              run: | 
+                  echo y | sfdx plugins:install sfdx-git-delta
+                  sfdx plugins 
+
+            # Install java as it is required for the next step
+            - name: 'Installing java'
+              run: |
+                sudo apt-get update
+                sudo apt install default-jdk
+
+            # Install SFDX scanner
+            - name: 'Installing SFDX scanner'
+              run: sfdx plugins:install @salesforce/sfdx-scanner
+
+            # Authenticate to org using the URL stored in the text file
+            - name: 'Authenticate to Integration Org'
+              run: echo ${{ secrets.SFDX_AUTH_URL }} | sf org login sfdx-url -s -u
+
+            - name: 'Create delta packages for new, modified or deleted metadata'
+              run: | 
+                  mkdir changed-sources
+                  sfdx sgd:source:delta --to "HEAD" --from "HEAD^" --output changed-sources/ --generate-delta --source force-app/ 
+
+            - name: 'Check-only deploy delta changes - run specified tests'
+              if: ${{ env.APEX_TESTS != 'all' }}
+              run: |
+                  echo ${{env.APEX_TESTS}}
+                  sfdx force:source:deploy -p "changed-sources/force-app" --checkonly --testlevel RunSpecifiedTests --runtests ${{env.APEX_TESTS}} --json
+
+            - name: 'Check-only deploy delta changes - run all tests'
+              if: ${{ env.APEX_TESTS == 'all' }}
+              run: |
+                  sfdx force:source:deploy -p "changed-sources/force-app" --checkonly --testlevel RunLocalTests  --json
+
+            - name: 'Deploy destructive changes (if any)'
+              run: sfdx force:mdapi:deploy -d "changed-sources/destructiveChanges" --checkonly --ignorewarnings 
