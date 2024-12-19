@@ -7,7 +7,6 @@ on:
       paths:
         - 'force-app/**'
             
-
 jobs:
     validate-deployment-on-develop-org:
         runs-on: ubuntu-latest
