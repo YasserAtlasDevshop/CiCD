@@ -10,6 +10,6 @@ public class SimpleCalculatorTest {
         Integer result = SimpleCalculator.addNumbers(num1, num2);
 
         // Assert that the result is as expected
-        System.assertEquals(40, result, 'The addition result should be 30');
+        System.assertEquals(60, result, 'The addition result should be 30');
     }
 }
