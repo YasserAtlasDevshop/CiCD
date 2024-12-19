@@ -3,7 +3,7 @@ name: Validate PR on develop branch
 on:
     pull_request:
       types: [opened]
-      branches: [ Develop ]
+      branches: [ develop ]
       paths:
         - 'force-app/**'
             
